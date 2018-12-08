@@ -74,7 +74,6 @@ static int cursorsafetable(lua_State *l)
    "    function fenv.aggregate_now(x) "
    "      return rawequal(x, agid) "
    "    end "
-   "    print(string.format([[agid, %s]], tostring(agid))) "
    "    register_aggregate(name, #inputs, func, agid) "
    "  end "
    " "  
