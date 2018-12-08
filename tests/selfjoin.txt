@@ -1,0 +1,4 @@
+func|srclengthrank
+one|1
+identity|2
+square|3
