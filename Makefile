@@ -57,7 +57,7 @@ lib/liblua.a : deps/lua-5.3.5/.exists
 oursrc=src/main.c src/executelua.c src/functable.c src/registersimple.c src/registeraggregate.c
 
 lib/luafunctions.so : $(oursrc) include/.sqlite.exists include/.lua.exists lib/liblua.a
-	gcc -g -shared -fPIC -Iinclude $(oursrc) lib/liblua.a -o $@ -lm -ldl
+	gcc -std=c99 -g -shared -fPIC -Iinclude $(oursrc) lib/liblua.a -o $@ -lm -ldl
 
 # *** bin directory ***
 bin/sqlite3.26 : deps/sqlite-amalgamation-3260000/.exists
