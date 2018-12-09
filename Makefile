@@ -54,7 +54,7 @@ lib/liblua.a : deps/lua-5.3.5/.exists
 	mkdir -p lib
 	cd lib && ln -s ../deps/lua-5.3.5/src/liblua.a
 
-oursrc=src/main.c src/functable.c src/registersimple.c src/registeraggregate.c
+oursrc=src/main.c src/functable.c src/registersimple.c src/registeraggregate.c src/rclua.c
 
 lib/luafunctions.so : $(oursrc) include/.sqlite.exists include/.lua.exists lib/liblua.a
 	gcc -std=c99 -g -shared -fPIC -Iinclude $(oursrc) lib/liblua.a -o $@ -lm -ldl
