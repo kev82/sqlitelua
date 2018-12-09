@@ -10,7 +10,6 @@ int sqlite3_luafunctions_init(sqlite3 *db, char **pzErrMsg,
   SQLITE_EXTENSION_INIT2(pApi);
 
   int rc = SQLITE_OK;
-  setup_executelua(db);
   setup_functiontable(db);
   return rc;
 }
