@@ -74,7 +74,15 @@ static void execute_step(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 
   if(lua_resume(l, NULL, argc) != LUA_YIELD)
   {
-    sqlite3_result_error(ctx, "Error aggregating", -1);
+    if(lua_type(l, -1) == LUA_TSTRING)
+    {
+      sqlite3_result_error(ctx, lua_tostring(l, -1), -1);
+    }
+    else
+    {
+      sqlite3_result_error(ctx, "Error aggregating", -1);
+    }
+ 
     goto cleanup;
   }
   lua_settop(l, 0);
@@ -122,9 +130,13 @@ static void execute_final(sqlite3_context *ctx)
       goto cleanup;
     case LUA_ERRRUN:
       assert(lua_gettop(l) >= 1);
-      // ;;; we need to check the type is a tring before we call this as otherwise it may alloc
-      sqlite3_result_error(ctx, lua_tolstring(l, -1, NULL), -1);
-      goto cleanup;
+      if(lua_type(l, -1) == LUA_TSTRING)
+      {
+        sqlite3_result_error(ctx, lua_tostring(l, -1), -1);
+        goto cleanup;
+      }
+      //This intentionally falls through to the default handler
+      //as we don't know what to do with the non-string error object.
     default:
       sqlite3_result_error(ctx, "Unknown Aggregator error", -1);
       goto cleanup;

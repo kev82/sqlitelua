@@ -3,7 +3,8 @@ all : lib/luafunctions.so bin/sqlite3.26
 tests : runtest/selfjoin \
         runtest/exponential \
         runtest/intervaloverlap \
-        runtest/usconcat
+        runtest/usconcat \
+        runtest/aggerr
 
 clean :
 	rm -rf deps
@@ -69,4 +70,4 @@ bin/sqlite3.26 : deps/sqlite-amalgamation-3260000/.exists
 
 # *** running tests ***
 runtest/% : tests/%.sql tests/%.txt all
-	cat tests/$(notdir $@).sql | bin/sqlite3.26 | diff /dev/stdin tests/$(notdir $@).txt
+	cat tests/$(notdir $@).sql | bin/sqlite3.26 2>&1 | diff /dev/stdin tests/$(notdir $@).txt
