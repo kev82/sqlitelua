@@ -110,6 +110,13 @@ static int cursorsafetable(lua_State *l)
   assert(status == LUA_OK);
 
   lua_call(l, 0, 2);
+
+  int iteridx = luaL_ref(l, LUA_REGISTRYINDEX);
+  int insertidx = luaL_ref(l, LUA_REGISTRYINDEX);
+
+  lua_pushinteger(l, insertidx);
+  lua_pushinteger(l, iteridx);
+
   return 2;
 }
 
@@ -182,9 +189,10 @@ static int ft_connect(sqlite3 *db, void *unused, int argc, const char * const * 
   {
     assert(0);
   }
-  // ;;; This block needs to be wrapped still as the luaL_ref can error
+/*
   int iteridx = luaL_ref(rcs->l, LUA_REGISTRYINDEX);
   int insertidx = luaL_ref(rcs->l, LUA_REGISTRYINDEX);
+*/
 
 /*
   lua_pushcfunction(l, adddummyrecord);
@@ -197,9 +205,11 @@ static int ft_connect(sqlite3 *db, void *unused, int argc, const char * const * 
 
   ft_vtab *vt = (ft_vtab *)sqlite3_malloc(sizeof(ft_vtab));
   vt->rcs = rcs;
-  vt->insert = insertidx;
-  vt->iter = iteridx;
+  vt->insert = (int)lua_tointeger(rcs->l, -2);
+  vt->iter = (int)lua_tointeger(rcs->l, -1);
   *pvtab = (sqlite3_vtab *)vt;
+
+  lua_pop(rcs->l, 2);
 
   return SQLITE_OK;
 }
