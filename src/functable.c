@@ -19,8 +19,22 @@ typedef struct
   int iter;
 } ft_vtab;
 
-static int cursorsafetable(lua_State *l)
+static int setupstate(lua_State *l)
 {
+  lua_settop(l, 2);
+  luaL_checktype(l, 1, LUA_TLIGHTUSERDATA);
+  luaL_checktype(l, 2, LUA_TLIGHTUSERDATA);
+
+  lua_pushvalue(l, 1);
+  lua_pushvalue(l, 2);
+  lua_pushcclosure(l, register_simplefunc, 2);
+  lua_setglobal(l, "register_simple");
+
+  lua_pushvalue(l, 1);
+  lua_pushvalue(l, 2);
+  lua_pushcclosure(l, register_aggregate, 2);
+  lua_setglobal(l, "register_aggregate");
+
   lua_settop(l, 0);
 
   //Returns an inserter and an iterator for our storage table. The iterator is
@@ -172,22 +186,15 @@ static int ft_connect(sqlite3 *db, void *unused, int argc, const char * const * 
   rc_lua_state *rcs = NULL;
   rc_lua_get(&rcs);
 
-  // ;;; This block needs to be wrapped still as the setglobal can error
+  lua_pushcfunction(rcs->l, setupstate);
   lua_pushlightuserdata(rcs->l, rcs);
   lua_pushlightuserdata(rcs->l, db);
-  lua_pushcclosure(rcs->l, register_simplefunc, 2);
-  lua_setglobal(rcs->l, "register_simple");
-
-  // ;;; This block needs to be wrapped still as the setglobal can error
-  lua_pushlightuserdata(rcs->l, rcs);
-  lua_pushlightuserdata(rcs->l, db);
-  lua_pushcclosure(rcs->l, register_aggregate, 2);
-  lua_setglobal(rcs->l, "register_aggregate");
-
-  lua_pushcfunction(rcs->l, cursorsafetable);
-  if(lua_pcall(rcs->l, 0, 2, 0) != LUA_OK)
+  if(lua_pcall(rcs->l, 2, 2, 0) != LUA_OK)
   {
-    assert(0);
+    assert(lua_type(rcs->l, -1) == LUA_TSTRING);
+    *perr = sqlite3_mprintf("failure to create vt: %s",
+     lua_tostring(rcs->l, -1));
+    goto cleanup;
   }
 /*
   int iteridx = luaL_ref(rcs->l, LUA_REGISTRYINDEX);
@@ -212,6 +219,9 @@ static int ft_connect(sqlite3 *db, void *unused, int argc, const char * const * 
   lua_pop(rcs->l, 2);
 
   return SQLITE_OK;
+cleanup:
+  rc_lua_release(&rcs);
+  return SQLITE_ERROR;
 }
 
 static int ft_disconnect(sqlite3_vtab *vt)
