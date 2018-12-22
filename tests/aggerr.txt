@@ -1,0 +1,4 @@
+Error: near line 28: [string "grperrtext"]:1: some error text
+Error: near line 34: [string "grperrtextfinal"]:1: error text
+Error: near line 40: Error aggregating
+Error: near line 46: Unknown Aggregator error

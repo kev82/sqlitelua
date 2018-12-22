@@ -5,37 +5,41 @@ SQLITE_EXTENSION_INIT3
 #include <lauxlib.h>
 #include <assert.h>
 
+#include "rclua.h"
+
 typedef struct
 {
-  lua_State *main;
+  rc_lua_state *rcs;
   int funcidx;
   int aggflagidx;
 } def_aggregate;
 
 typedef struct
 {
-  lua_State *coro;
-  int idx;
+  int init;
+  coro_state cs;
 } agg_context;
 
 static void execute_step(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 {
   def_aggregate *def = (def_aggregate *)sqlite3_user_data(ctx);
 
-  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx, sizeof(agg_context));
+  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx,
+   sizeof(agg_context));
   assert(agg != NULL);
-  if(agg->coro == 0)
+  if(agg->init == 0)
   {
-    agg->coro = lua_newthread(def->main);
-    agg->idx = luaL_ref(def->main, LUA_REGISTRYINDEX);
-    lua_rawgeti(agg->coro, LUA_REGISTRYINDEX, def->funcidx);
+    agg->init = 1;
+    rc_lua_initcoro(&agg->cs);
+    rc_lua_obtaincoro(def->rcs, &agg->cs);
+    lua_rawgeti(agg->cs.coro, LUA_REGISTRYINDEX, def->funcidx);
   }
   else
   {
-    assert(lua_status(agg->coro) == LUA_YIELD);
+    assert(lua_status(agg->cs.coro) == LUA_YIELD);
   }
 
-  lua_State *l = agg->coro;
+  lua_State *l = agg->cs.coro;
 
   for(int i=0;i!=argc;++i)
   {
@@ -48,7 +52,11 @@ static void execute_step(sqlite3_context *ctx, int argc, sqlite3_value **argv)
         lua_pushnumber(l, sqlite3_value_double(argv[i]));
         break;
       case SQLITE_TEXT:
-        lua_pushstring(l, sqlite3_value_text(argv[i]));
+        if(rc_lua_pushstring(l, sqlite3_value_text(argv[i])) != LUA_OK)
+        {
+          sqlite3_result_error(ctx, "lua string marshalling failed", -1);
+          goto cleanup;
+        }
         break;
       case SQLITE_NULL:
         lua_pushnil(l);
@@ -61,36 +69,44 @@ static void execute_step(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 
   if(lua_resume(l, NULL, argc) != LUA_YIELD)
   {
-    sqlite3_result_error(ctx, "Error aggregating", -1);
+    if(lua_type(l, -1) == LUA_TSTRING)
+    {
+      sqlite3_result_error(ctx, lua_tostring(l, -1), -1);
+    }
+    else
+    {
+      sqlite3_result_error(ctx, "Error aggregating", -1);
+    }
+ 
     goto cleanup;
   }
   lua_settop(l, 0);
 
   return;
 cleanup:
-  lua_pushnil(def->main);
-  lua_rawseti(def->main, LUA_REGISTRYINDEX, agg->idx);
-  agg->coro = 0;
+  rc_lua_releasecoro(def->rcs, &agg->cs);
+  agg->init = 0;
 }
 
 static void execute_final(sqlite3_context *ctx)
 {
   def_aggregate *def = (def_aggregate *)sqlite3_user_data(ctx);
 
-  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx, sizeof(agg_context));
+  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx,
+   sizeof(agg_context));
   assert(agg != NULL);
-  if(agg->coro == 0)
+  if(agg->init == 0)
   {
-    agg->coro = lua_newthread(def->main);
-    agg->idx = luaL_ref(def->main, LUA_REGISTRYINDEX);
-    lua_rawgeti(agg->coro, LUA_REGISTRYINDEX, def->funcidx);
+    rc_lua_initcoro(&agg->cs);
+    rc_lua_obtaincoro(def->rcs, &agg->cs);
+    lua_rawgeti(agg->cs.coro, LUA_REGISTRYINDEX, def->funcidx);
   }
   else
   {
-    assert(lua_status(agg->coro) == LUA_YIELD);
+    assert(lua_status(agg->cs.coro) == LUA_YIELD);
   }
 
-  lua_State *l = agg->coro;
+  lua_State *l = agg->cs.coro;
   lua_rawgeti(l, LUA_REGISTRYINDEX, def->aggflagidx);
   switch(lua_resume(l, NULL, 1))
   {
@@ -101,8 +117,13 @@ static void execute_final(sqlite3_context *ctx)
       goto cleanup;
     case LUA_ERRRUN:
       assert(lua_gettop(l) >= 1);
-      sqlite3_result_error(ctx, lua_tolstring(l, -1, NULL), -1);
-      goto cleanup;
+      if(lua_type(l, -1) == LUA_TSTRING)
+      {
+        sqlite3_result_error(ctx, lua_tostring(l, -1), -1);
+        goto cleanup;
+      }
+      //This intentionally falls through to the default handler
+      //as we don't know what to do with the non-string error object.
     default:
       sqlite3_result_error(ctx, "Unknown Aggregator error", -1);
       goto cleanup;
@@ -118,6 +139,7 @@ static void execute_final(sqlite3_context *ctx)
       sqlite3_result_double(ctx, lua_tonumber(l, -1));
       break;
     case LUA_TSTRING:
+      //This is fine as we know the type is LUA_TSTRING
       sqlite3_result_text(ctx, lua_tostring(l, -1), -1, SQLITE_TRANSIENT);
       break;
     case LUA_TBOOLEAN:
@@ -129,14 +151,19 @@ static void execute_final(sqlite3_context *ctx)
   }
 
 cleanup:
-  lua_pushnil(def->main);
-  lua_rawseti(def->main, LUA_REGISTRYINDEX, agg->idx);
-  assert(lua_gettop(def->main) == 0);
+  rc_lua_releasecoro(def->rcs, &agg->cs);
+}
+
+static void freeaggdef(void *v)
+{
+  def_aggregate *def = (def_aggregate *)v;
+  rc_lua_release(&def->rcs);
+  sqlite3_free(v);
 }
 
 int register_aggregate(lua_State *l)
 {
-  //name, nargs, func
+  //name, nargs, func, aggflag
   lua_settop(l, 4);
   luaL_checktype(l, 1, LUA_TSTRING);
   luaL_checktype(l, 2, LUA_TNUMBER);
@@ -146,7 +173,8 @@ int register_aggregate(lua_State *l)
   def_aggregate *def = (def_aggregate *)sqlite3_malloc(sizeof(def_aggregate));
   assert(def != NULL);
 
-  def->main = (lua_State *)lua_touserdata(l, lua_upvalueindex(1));
+  def->rcs = (rc_lua_state *)lua_touserdata(l, lua_upvalueindex(1));
+  rc_lua_get(&def->rcs);
   def->aggflagidx = luaL_ref(l, LUA_REGISTRYINDEX);
   def->funcidx = luaL_ref(l, LUA_REGISTRYINDEX);
 
@@ -154,7 +182,8 @@ int register_aggregate(lua_State *l)
   const char *name = lua_tostring(l, 1);
   sqlite3 *db = lua_touserdata(l, lua_upvalueindex(2));
 
-  sqlite3_create_function_v2(db, name, nargs, SQLITE_ANY, def, NULL, execute_step, execute_final, sqlite3_free);
+  sqlite3_create_function_v2(db, name, nargs, SQLITE_ANY, def, NULL,
+   execute_step, execute_final, freeaggdef);
 
   return 0;
 }

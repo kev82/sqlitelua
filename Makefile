@@ -3,7 +3,8 @@ all : lib/luafunctions.so bin/sqlite3.26
 tests : runtest/selfjoin \
         runtest/exponential \
         runtest/intervaloverlap \
-        runtest/usconcat
+        runtest/usconcat \
+        runtest/aggerr
 
 clean :
 	rm -rf deps
@@ -54,7 +55,7 @@ lib/liblua.a : deps/lua-5.3.5/.exists
 	mkdir -p lib
 	cd lib && ln -s ../deps/lua-5.3.5/src/liblua.a
 
-oursrc=src/main.c src/functable.c src/registersimple.c src/registeraggregate.c
+oursrc=src/main.c src/functable.c src/registersimple.c src/registeraggregate.c src/rclua.c
 
 lib/luafunctions.so : $(oursrc) include/.sqlite.exists include/.lua.exists lib/liblua.a
 	gcc -std=c99 -g -shared -fPIC -Iinclude $(oursrc) lib/liblua.a -o $@ -lm -ldl
@@ -69,4 +70,4 @@ bin/sqlite3.26 : deps/sqlite-amalgamation-3260000/.exists
 
 # *** running tests ***
 runtest/% : tests/%.sql tests/%.txt all
-	cat tests/$(notdir $@).sql | bin/sqlite3.26 | diff /dev/stdin tests/$(notdir $@).txt
+	cat tests/$(notdir $@).sql | bin/sqlite3.26 2>&1 | diff /dev/stdin tests/$(notdir $@).txt
