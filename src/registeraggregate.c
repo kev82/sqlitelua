@@ -60,8 +60,11 @@ static void execute_step(sqlite3_context *ctx, int argc, sqlite3_value **argv)
         lua_pushnumber(l, sqlite3_value_double(argv[i]));
         break;
       case SQLITE_TEXT:
-        // ;;; have to do something here as strings may alloc
-        lua_pushstring(l, sqlite3_value_text(argv[i]));
+        if(rc_lua_pushstring(l, sqlite3_value_text(argv[i])) != LUA_OK)
+        {
+          sqlite3_result_error(ctx, "lua string marshalling failed", -1);
+          goto cleanup;
+        }
         break;
       case SQLITE_NULL:
         lua_pushnil(l);

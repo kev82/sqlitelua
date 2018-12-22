@@ -12,6 +12,8 @@ typedef struct
 void rc_lua_get(rc_lua_state **prcs);
 void rc_lua_release(rc_lua_state **prcs);
 
+int rc_lua_pushstring(lua_State *unsafe, const char *str);
+
 typedef struct
 {
   lua_State *coro;

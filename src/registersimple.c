@@ -40,8 +40,11 @@ static void execute(sqlite3_context *ctx, int argc, sqlite3_value **argv)
         lua_pushnumber(cs.coro, sqlite3_value_double(argv[i]));
         break;
       case SQLITE_TEXT:
-        // ;;; need to do this differently as may throw a memory error here
-        lua_pushstring(cs.coro, sqlite3_value_text(argv[i]));
+        if(rc_lua_pushstring(cs.coro, sqlite3_value_text(argv[i])) != LUA_OK)
+        {
+          sqlite3_result_error(ctx, "lua string marsalling failed", -1);
+          goto cleanup;
+        }
         break;
       case SQLITE_NULL:
         lua_pushnil(cs.coro);

@@ -437,9 +437,11 @@ static int ft_update(sqlite3_vtab *vtab, int argc, sqlite3_value **argv,
   rc_lua_obtaincoro(vt->rcs, &setup);
 
   lua_rawgeti(setup.coro, LUA_REGISTRYINDEX, vt->insert);
-  // ;;; Pushing strings can cause a memory alloc, we need to wrap this
-  lua_pushstring(setup.coro, sqlite3_value_text(argv[2]));
-  lua_pushstring(setup.coro, sqlite3_value_text(argv[6]));
+  if(rc_lua_pushstring(setup.coro, sqlite3_value_text(argv[2])) != LUA_OK
+   || rc_lua_pushstring(setup.coro, sqlite3_value_text(argv[6])) != LUA_OK)
+  {
+    return SQLITE_ERROR;
+  }
 
   //Just in case some pratt does a coroutine.yield inside the setup, we should
   //catch it and fail

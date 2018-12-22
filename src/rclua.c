@@ -9,9 +9,12 @@ SQLITE_EXTENSION_INIT3
 
 #include "rclua.h"
 
-static int auxopenlibs(lua_State *l)
+static int auxsetupstate(lua_State *l)
 {
   luaL_openlibs(l);
+
+  lua_newthread(l);
+  lua_rawsetp(l, LUA_REGISTRYINDEX, (void *)rc_lua_pushstring);
   return 0;
 }
 
@@ -35,7 +38,7 @@ void rc_lua_get(rc_lua_state **prcs)
   else
   {
     rcs->l = luaL_newstate();
-    lua_pushcfunction(rcs->l, auxopenlibs);
+    lua_pushcfunction(rcs->l, auxsetupstate);
     if(lua_pcall(rcs->l, 0, 0, 0) != LUA_OK)
     {
       assert(0);
@@ -130,4 +133,45 @@ void rc_lua_releasecoro(rc_lua_state *rcs, coro_state *c)
     assert(0);
   }
 }
+
+static int auxpushstring(lua_State *l)
+{
+  luaL_checktype(l, 1, LUA_TLIGHTUSERDATA);
+  lua_pushstring(l, (const char *)lua_touserdata(l, 1));
+  return 1;
+}
   
+int rc_lua_pushstring(lua_State *unsafe, const char *str)
+{
+  if(!lua_checkstack(unsafe, 1))
+  {
+    return LUA_ERRMEM;
+  }
+
+  lua_rawgetp(unsafe, LUA_REGISTRYINDEX, rc_lua_pushstring);
+  if(lua_type(unsafe, -1) != LUA_TTHREAD)
+  {
+    lua_pop(unsafe, 1);
+    return LUA_ERRRUN;
+  }
+
+  lua_State *l = lua_tothread(unsafe, -1);
+  lua_pop(unsafe, 1);
+  if(lua_status(l) != LUA_OK || lua_gettop(l) != 0)
+  {
+    return LUA_ERRRUN;
+  }
+
+  lua_pushcfunction(l, auxpushstring);
+  lua_pushlightuserdata(l, (void *)str);
+  if(lua_pcall(l, 1, 1, 0) != LUA_OK)
+  {
+    lua_settop(l, 0);
+    return LUA_ERRRUN;
+  }
+
+  assert(lua_type(l, -1) == LUA_TSTRING);
+  lua_xmove(l, unsafe, 1);
+
+  return LUA_OK;
+}
