@@ -18,12 +18,6 @@ static void execute(sqlite3_context *ctx, int argc, sqlite3_value **argv)
   def_simple *def = (def_simple *)sqlite3_user_data(ctx);
   assert(def != NULL);
 
-/*
-  assert(lua_gettop(def->main) == 0);
-  lua_State *func = lua_newthread(def->main);
-  int functhread = luaL_ref(def->main, LUA_REGISTRYINDEX);
-  assert(lua_gettop(def->main) == 0);
-*/
   coro_state cs;
   rc_lua_initcoro(&cs);
   rc_lua_obtaincoro(def->rcs, &cs);
@@ -72,7 +66,6 @@ static void execute(sqlite3_context *ctx, int argc, sqlite3_value **argv)
       sqlite3_result_double(ctx, lua_tonumber(cs.coro, -1));
       break;
     case LUA_TSTRING:
-      // This is fine as we have checked the type
       sqlite3_result_text(ctx, lua_tostring(cs.coro, -1), -1, SQLITE_TRANSIENT);
       break;
     case LUA_TBOOLEAN:
@@ -84,11 +77,6 @@ static void execute(sqlite3_context *ctx, int argc, sqlite3_value **argv)
   }
 
 cleanup:
-/*
-  lua_pushnil(def->main);
-  lua_rawseti(def->main, LUA_REGISTRYINDEX, functhread);
-  assert(lua_gettop(def->main) == 0);
-*/
   rc_lua_releasecoro(def->rcs, &cs);
 }
 

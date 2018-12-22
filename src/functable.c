@@ -134,32 +134,6 @@ static int setupstate(lua_State *l)
   return 2;
 }
 
-/*
-static int adddummyrecord(lua_State *l)
-{
-  lua_settop(l, 1);
-  lua_pushstring(l, "testfunc");
-
-  lua_newtable(l);
-
-  lua_pushnil(l);
-  lua_rawseti(l, -2, 1);
-
-  lua_pushnil(l);
-  lua_rawseti(l, -2, 2);
-
-  lua_pushstring(l, "simple");
-  lua_rawseti(l, -2, 3);
-
-  lua_pushstring(l, "--not implemented yet");
-  lua_rawseti(l, -2, 4);
-
-  lua_settable(l, -3);
-
-  return 0;
-}
-*/
-  
 static int ft_connect(sqlite3 *db, void *unused, int argc, const char * const * unused2,
  sqlite3_vtab **pvtab, char **perr)
 {
@@ -179,10 +153,6 @@ static int ft_connect(sqlite3 *db, void *unused, int argc, const char * const * 
 
   sqlite3_declare_vtab(db, tbldef);
 
-/*
-  lua_State *l = luaL_newstate();
-  luaL_openlibs(l);
-*/
   rc_lua_state *rcs = NULL;
   rc_lua_get(&rcs);
 
@@ -196,19 +166,6 @@ static int ft_connect(sqlite3 *db, void *unused, int argc, const char * const * 
      lua_tostring(rcs->l, -1));
     goto cleanup;
   }
-/*
-  int iteridx = luaL_ref(rcs->l, LUA_REGISTRYINDEX);
-  int insertidx = luaL_ref(rcs->l, LUA_REGISTRYINDEX);
-*/
-
-/*
-  lua_pushcfunction(l, adddummyrecord);
-  lua_rawgeti(l, LUA_REGISTRYINDEX, tblidx);
-  if(lua_pcall(l, 1, 0, 0) != LUA_OK)
-  {
-    assert(0);
-  }
-*/
 
   ft_vtab *vt = (ft_vtab *)sqlite3_malloc(sizeof(ft_vtab));
   vt->rcs = rcs;
@@ -227,7 +184,6 @@ cleanup:
 static int ft_disconnect(sqlite3_vtab *vt)
 {
   ft_vtab *ft_vt = (ft_vtab *)vt;
-  //lua_close(ft_vt->l);
   rc_lua_release(&ft_vt->rcs);
   sqlite3_free(ft_vt);
   return SQLITE_OK;
@@ -247,8 +203,6 @@ typedef struct
 {
   sqlite3_vtab_cursor cur;
   coro_state cs;
-  //lua_State *coro;
-  //int coroidx;
 } ft_cursor;
 
 static int ft_open(sqlite3_vtab *unused, sqlite3_vtab_cursor **pcur)
@@ -259,10 +213,6 @@ static int ft_open(sqlite3_vtab *unused, sqlite3_vtab_cursor **pcur)
     return SQLITE_NOMEM;
   }
 
-/*
-  cur->coro = NULL;
-  cur->coroidx = -1;
-*/
   rc_lua_initcoro(&cur->cs);
   *pcur = (sqlite3_vtab_cursor *)cur;
   return SQLITE_OK;
@@ -272,20 +222,6 @@ static int ft_close(sqlite3_vtab_cursor *cursor)
 {
   ft_cursor *cur = (ft_cursor *)cursor;
   ft_vtab *vt = (ft_vtab *)(cur->cur.pVtab);
-/*
-  if(cur->coro != NULL)
-  {
-    lua_State *l = vt->l;
-    assert(l != NULL);
-
-    assert(lua_gettop(l) == 0);
-    lua_pushnil(l);
-    lua_rawseti(l, LUA_REGISTRYINDEX, cur->coroidx);
-    assert(lua_gettop(l) == 0);
-
-    cur->coro = NULL;
-  }
-*/
   rc_lua_releasecoro(vt->rcs, &cur->cs);
 
   sqlite3_free(cur);
@@ -299,27 +235,6 @@ static int ft_filter(sqlite3_vtab_cursor *cursor, int unused, const char * unuse
   ft_cursor *cur = (ft_cursor *)cursor;
   ft_vtab *vt = (ft_vtab *)(cur->cur.pVtab);
 
-/*
-  assert(lua_gettop(vt->l) == 0);
-
-  //Do we have a coroutine that's not ready to be used, if so deallocate it
-  if(cur->coro != NULL && lua_status(cur->coro) != LUA_OK)
-  {
-    lua_pushnil(vt->l);
-    lua_rawseti(vt->l, LUA_REGISTRYINDEX, cur->coroidx);
-    cur->coro = NULL;
-  }
-
-  //Create the coroutine of necessary
-  if(cur->coro == NULL)
-  {
-    cur->coro = lua_newthread(vt->l);
-    cur->coroidx = luaL_ref(vt->l, LUA_REGISTRYINDEX);
-  }
-
-  //Just in case there's crap left from the last iteration
-  lua_settop(cur->coro, 0);
-*/
   rc_lua_obtaincoro(vt->rcs, &cur->cs);
   
   lua_rawgeti(cur->cs.coro, LUA_REGISTRYINDEX, vt->iter);
@@ -381,10 +296,8 @@ static int ft_column(sqlite3_vtab_cursor *cursor, sqlite3_context *ctx, int cidx
       sqlite3_result_int(ctx, lua_toboolean(cur->cs.coro, cidx));
       break;
     case LUA_TSTRING:
-      //As far as I can ell this is safe to call, even though lua_tostring is flagged as 'm'. I think
-      //the 'm' only applies if the underlying type is not LUA_TSTRING, which we have already checked
-      //here
-      sqlite3_result_text(ctx, lua_tostring(cur->cs.coro, cidx), -1, SQLITE_TRANSIENT);
+      sqlite3_result_text(ctx, lua_tostring(cur->cs.coro, cidx), -1,
+       SQLITE_TRANSIENT);
       break;
     case LUA_TNUMBER:
       if(lua_isinteger(cur->cs.coro, cidx))
@@ -436,12 +349,6 @@ static int ft_update(sqlite3_vtab *vtab, int argc, sqlite3_value **argv,
     return SQLITE_CONSTRAINT;
   }
 
-/*
-  assert(lua_gettop(vt->l) == 0);
-
-  lua_State *setup = lua_newthread(vt->l);
-  int setupidx = luaL_ref(vt->l, LUA_REGISTRYINDEX);
-*/
   coro_state setup;
   rc_lua_initcoro(&setup);
   rc_lua_obtaincoro(vt->rcs, &setup);
@@ -454,20 +361,15 @@ static int ft_update(sqlite3_vtab *vtab, int argc, sqlite3_value **argv,
   }
 
   //Just in case some pratt does a coroutine.yield inside the setup, we should
-  //catch it and fail
+  //resume, so we can catch it and fail
   int rc = SQLITE_OK;
   if(lua_resume(setup.coro, NULL, 2) != LUA_OK)
   {
     rc = SQLITE_CONSTRAINT;
   }
 
-/*
-  lua_pushnil(vt->l);
-  lua_rawseti(vt->l, LUA_REGISTRYINDEX, setupidx);
-*/
   rc_lua_releasecoro(vt->rcs, &setup);
 
-//  assert(lua_gettop(vt->l) == 0);
   return rc;
 }
   

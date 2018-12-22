@@ -9,7 +9,6 @@ SQLITE_EXTENSION_INIT3
 
 typedef struct
 {
-  //lua_State *main;
   rc_lua_state *rcs;
   int funcidx;
   int aggflagidx;
@@ -19,24 +18,17 @@ typedef struct
 {
   int init;
   coro_state cs;
-/*
-  lua_State *coro;
-  int idx;
-*/
 } agg_context;
 
 static void execute_step(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 {
   def_aggregate *def = (def_aggregate *)sqlite3_user_data(ctx);
 
-  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx, sizeof(agg_context));
+  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx,
+   sizeof(agg_context));
   assert(agg != NULL);
   if(agg->init == 0)
   {
-/*
-    agg->coro = lua_newthread(def->main);
-    agg->idx = luaL_ref(def->main, LUA_REGISTRYINDEX);
-*/
     agg->init = 1;
     rc_lua_initcoro(&agg->cs);
     rc_lua_obtaincoro(def->rcs, &agg->cs);
@@ -92,11 +84,6 @@ static void execute_step(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 
   return;
 cleanup:
-/*
-  lua_pushnil(def->main);
-  lua_rawseti(def->main, LUA_REGISTRYINDEX, agg->idx);
-  agg->coro = 0;
-*/
   rc_lua_releasecoro(def->rcs, &agg->cs);
   agg->init = 0;
 }
@@ -105,14 +92,11 @@ static void execute_final(sqlite3_context *ctx)
 {
   def_aggregate *def = (def_aggregate *)sqlite3_user_data(ctx);
 
-  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx, sizeof(agg_context));
+  agg_context *agg = (agg_context *)sqlite3_aggregate_context(ctx,
+   sizeof(agg_context));
   assert(agg != NULL);
   if(agg->init == 0)
   {
-/*
-    agg->coro = lua_newthread(def->main);
-    agg->idx = luaL_ref(def->main, LUA_REGISTRYINDEX);
-*/
     rc_lua_initcoro(&agg->cs);
     rc_lua_obtaincoro(def->rcs, &agg->cs);
     lua_rawgeti(agg->cs.coro, LUA_REGISTRYINDEX, def->funcidx);
@@ -167,11 +151,6 @@ static void execute_final(sqlite3_context *ctx)
   }
 
 cleanup:
-/*
-  lua_pushnil(def->main);
-  lua_rawseti(def->main, LUA_REGISTRYINDEX, agg->idx);
-  assert(lua_gettop(def->main) == 0);
-*/
   rc_lua_releasecoro(def->rcs, &agg->cs);
 }
 
@@ -184,7 +163,7 @@ static void freeaggdef(void *v)
 
 int register_aggregate(lua_State *l)
 {
-  //name, nargs, func
+  //name, nargs, func, aggflag
   lua_settop(l, 4);
   luaL_checktype(l, 1, LUA_TSTRING);
   luaL_checktype(l, 2, LUA_TNUMBER);
@@ -203,7 +182,8 @@ int register_aggregate(lua_State *l)
   const char *name = lua_tostring(l, 1);
   sqlite3 *db = lua_touserdata(l, lua_upvalueindex(2));
 
-  sqlite3_create_function_v2(db, name, nargs, SQLITE_ANY, def, NULL, execute_step, execute_final, freeaggdef);
+  sqlite3_create_function_v2(db, name, nargs, SQLITE_ANY, def, NULL,
+   execute_step, execute_final, freeaggdef);
 
   return 0;
 }
