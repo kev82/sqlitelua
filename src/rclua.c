@@ -175,3 +175,38 @@ int rc_lua_pushstring(lua_State *unsafe, const char *str)
 
   return LUA_OK;
 }
+
+static int auxdeleter(lua_State *l)
+{
+  lua_settop(l, 1);
+  luaL_checktype(l, 1, LUA_TUSERDATA);
+
+  deleter *d = (deleter *)lua_touserdata(l, 1);
+  if(d->active)
+  {
+    (d->func)(d->data);
+  }
+
+  return 0;
+}
+
+deleter *rc_lua_deleter(lua_State *l)
+{
+  deleter *d = (deleter *)lua_newuserdata(l, sizeof(deleter));
+  memset(d, 0, sizeof(deleter));
+
+  lua_rawgetp(l, LUA_REGISTRYINDEX, (void *)rc_lua_deleter);
+  if(lua_type(l, -1) == LUA_TNIL)
+  {
+    lua_createtable(l, 0, 1);
+    lua_replace(l, -2);
+
+    lua_pushstring(l, "__gc");
+    lua_pushcfunction(l, auxdeleter);
+    lua_settable(l, -3);
+  }
+  assert(lua_type(l, -1) == LUA_TTABLE);
+
+  lua_setmetatable(l, -2);
+  return d;
+}

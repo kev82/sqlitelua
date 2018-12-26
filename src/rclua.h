@@ -24,4 +24,13 @@ void rc_lua_initcoro(coro_state *c);
 void rc_lua_obtaincoro(rc_lua_state *rcs, coro_state *c);
 void rc_lua_releasecoro(rc_lua_state *rcs, coro_state *c);
 
+typedef struct
+{
+  int active;
+  void *data;
+  void (*func)(void *);
+} deleter;
+
+deleter *rc_lua_deleter(lua_State *l);
+
 #endif
