@@ -365,6 +365,9 @@ static int ft_update(sqlite3_vtab *vtab, int argc, sqlite3_value **argv,
   int rc = SQLITE_OK;
   if(lua_resume(setup.coro, NULL, 2) != LUA_OK)
   {
+    sqlite3_free(vtab->zErrMsg);
+    vtab->zErrMsg = sqlite3_mprintf("Internal lua error (%s)",
+     lua_tostring(setup.coro, -1));
     rc = SQLITE_CONSTRAINT;
   }
 
