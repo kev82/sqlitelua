@@ -73,6 +73,16 @@ result of the aggregation.
 Like simple functions, the `inputs` array is only used to get the number of
 arguments. The `returns` array is not used.
 
+#### Table functions
+
+The inputs define the accepted arguments (which are hidden columns), the
+outputs define the non-hidden columns of the table. The table will only
+support equality constraints on its hidden columns, and all must be set. If
+this is the case then the function is exeuted in a coroutine the first call
+will contain the arguments, rows of output should be passed back with
+coroutine.yield. The return value from yield is undefined and should be
+ignored. When nothng is returned, it is assumed all rows have been produced.
+
 ### Building
 
 The included Makefile with the project has been written so it will work both on

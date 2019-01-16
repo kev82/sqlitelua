@@ -10,6 +10,7 @@ SQLITE_EXTENSION_INIT3
 
 int register_simplefunc(lua_State *l);
 int register_aggregate(lua_State *l);
+int register_tablefunc(lua_State *l);
 
 typedef struct
 {
@@ -34,6 +35,11 @@ static int setupstate(lua_State *l)
   lua_pushvalue(l, 2);
   lua_pushcclosure(l, register_aggregate, 2);
   lua_setglobal(l, "register_aggregate");
+
+  lua_pushvalue(l, 1);
+  lua_pushvalue(l, 2);
+  lua_pushcclosure(l, register_tablefunc, 2);
+  lua_setglobal(l, "register_table");
 
   lua_settop(l, 0);
 
@@ -91,6 +97,39 @@ static int setupstate(lua_State *l)
    "      return rawequal(x, agid) "
    "    end "
    "    register_aggregate(name, #inputs, func, agid) "
+   "  end "
+   "  if interface == [[table]] then "
+   "    local realf = func "
+   "    if #inputs > 0 then "
+   "      realf = function(...) "
+   "        local nargs = select([[#]], ...) "
+   "        local inner = coroutine.create(func) "
+   "        while true do "
+   "          local rvs = {coroutine.resume(inner, ...)} "
+   "          if not rvs[1] then "
+   "            error([[resume failed]]) "
+   "          end "
+   "          if coroutine.status(inner) == [[dead]] then "
+   "            return "
+   "          end "
+   "          for i=1,nargs do "
+   "            rvs[#rvs+1] = select(i, ...) "
+   "          end "
+   "          coroutine.yield(table.unpack(rvs, 2)) "
+   "        end "
+   "      end "
+   "    end "     
+   " "
+   "    local vtab = {} "
+   "    for _, col in ipairs(outputs) do "
+   "      vtab[#vtab+1] = col "
+   "    end "
+   "    for _, col in ipairs(inputs) do "
+   "      vtab[#vtab+1] = col .. [[ hidden]] "
+   "    end "
+   "    vtab = string.format([[create table vtab(%s)]], "
+   "     table.concat(vtab, [[,]])) "
+   "    register_table(name, #inputs, #outputs, vtab, realf) "
    "  end "
    " "  
    "  local u = { "
@@ -365,6 +404,9 @@ static int ft_update(sqlite3_vtab *vtab, int argc, sqlite3_value **argv,
   int rc = SQLITE_OK;
   if(lua_resume(setup.coro, NULL, 2) != LUA_OK)
   {
+    sqlite3_free(vtab->zErrMsg);
+    vtab->zErrMsg = sqlite3_mprintf("Internal lua error (%s)",
+     lua_tostring(setup.coro, -1));
     rc = SQLITE_CONSTRAINT;
   }
 
